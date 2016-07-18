@@ -1,6 +1,8 @@
 package mapreduce
 
 import (
+	"fmt"
+	//"log"
 	"hash/fnv"
 )
 
@@ -40,6 +42,10 @@ func doMap(
 	//     err := enc.Encode(&kv)
 	//
 	// Remember to close the file after you have written all the values!
+
+	//my code
+	fmt.Printf("doMap begin: %s %d %s %d\n", jobName, mapTaskNumber, inFile,  nReduce)
+	//debug("begin doMap: %s %d %s %d\n", jobName, mapTaskNumber, inFile,  nReduce)
 }
 
 func ihash(s string) uint32 {
