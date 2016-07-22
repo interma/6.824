@@ -2,7 +2,10 @@ package mapreduce
 
 import (
 	"fmt"
-	//"log"
+	"log"
+	"os"
+	"io/ioutil"
+	"encoding/json"
 	"hash/fnv"
 )
 
@@ -46,6 +49,45 @@ func doMap(
 	//my code
 	fmt.Printf("doMap begin: %s %d %s %d\n", jobName, mapTaskNumber, inFile,  nReduce)
 	//debug("begin doMap: %s %d %s %d\n", jobName, mapTaskNumber, inFile,  nReduce)
+
+	//read file
+	data, err := ioutil.ReadFile(inFile)
+	if err != nil {
+		log.Fatal("ReadFile ", inFile, " error: ", err)
+		return
+	}
+
+	//open output file
+	file_list := make([]*os.File, nReduce)
+	enc_list := make([]*json.Encoder, nReduce)
+	for i := 0; i < nReduce; i++ {
+		file, _ := os.Create(reduceName(jobName, mapTaskNumber, i))
+		file_list[i] = file
+		enc_list[i] = json.NewEncoder(file)
+	}
+
+	//call map func
+	kvs := mapF(inFile, string(data))
+	for i, item := range kvs{ //item is KeyValue
+		k := item.Key
+		v := item.Value
+		if i<10 {
+			//fmt.Printf("after map k:%s v:%s", k, v)
+			debug("after map k:%s v:%s\n", k, v)
+		}
+
+		//hash key
+		//split to n file
+		hash := ihash(k)
+		enc := enc_list[hash % uint32(nReduce)]
+		enc.Encode(&item)
+	}
+
+	//close output file
+	for _, file := range file_list {
+		file.Close()
+	}
+
 }
 
 func ihash(s string) uint32 {
