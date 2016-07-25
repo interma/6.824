@@ -2,6 +2,48 @@ package mapreduce
 
 import "fmt"
 
+//
+func (mr *Master) fire_task_i(phase jobPhase, i int, task_ch chan int) {
+	var nios int // number of inputs (for reduce) or outputs (for map)
+	switch phase {
+	case mapPhase:
+		nios = mr.nReduce
+	case reducePhase:
+		nios = len(mr.files)
+	}
+
+	//get worker
+	<- mr.registerChannel
+	mr.Lock()
+	worker := mr.workers[0]
+	mr.workers = mr.workers[1:]
+	mr.Unlock()
+
+	//make args
+	args := new(DoTaskArgs)
+	args.JobName = mr.jobName
+	args.Phase = phase
+	args.File = mr.files[i]
+	args.TaskNumber = i
+	args.NumOtherPhase = nios
+
+	//go rpc call worker's DoTask
+	go func() {
+		ok := call(worker, "Worker.DoTask", args, new(struct{}))
+		//register worker again
+		rg_args := new(RegisterArgs)
+		rg_args.Worker = worker
+		mr.Register(rg_args, new(struct{}))
+
+		if ok == false {
+			fmt.Printf("DoTask: RPC %s error\n", worker)
+			task_ch <- i
+		}else {
+			task_ch <- -1
+		}
+	}()
+}
+
 // schedule starts and waits for all tasks in the given phase (Map or Reduce).
 func (mr *Master) schedule(phase jobPhase) {
 	var ntasks int
@@ -43,40 +85,18 @@ func (mr *Master) schedule(phase jobPhase) {
 	task_ch := make(chan int)
 
 	for i := 0; i < ntasks; i++ {
-		//get worker
-		<- mr.registerChannel
-		mr.Lock()
-		worker := mr.workers[0]
-		mr.workers = mr.workers[1:]
-		mr.Unlock()
-
-		//make args
-		args := new(DoTaskArgs)
-		args.JobName = mr.jobName
-		args.Phase = phase
-		args.File = mr.files[i]
-		args.TaskNumber = i
-		args.NumOtherPhase = nios
-
-		//go rpc call worker's DoTask
-		go func() {
-			ok := call(worker, "Worker.DoTask", args, new(struct{}))
-			if ok == false {
-				fmt.Printf("DoTask: RPC %s register error\n", worker)
-			}
-			//register worker again
-			rg_args := new(RegisterArgs)
-			rg_args.Worker = worker
-			mr.Register(rg_args, new(struct{}))
-
-			task_ch <- i
-		}()
+		mr.fire_task_i(phase, i, task_ch)
 	}
 
 	//use channel wait for cur phase done
 	for i := 0; i < ntasks; i++ {
-		<-task_ch
+		idx := <-task_ch
+		if idx >= 0 {
+			i--
+			mr.fire_task_i(phase, idx, task_ch)
+		}
 	}
+
 
 	fmt.Printf("Schedule: %v phase done\n", phase)
 }

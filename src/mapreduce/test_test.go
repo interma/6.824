@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"runtime"
 	"bufio"
 	"log"
 	"os"
@@ -160,6 +161,7 @@ func TestSequentialMany(t *testing.T) {
 }
 
 func TestBasic(t *testing.T) {
+	runtime.GOMAXPROCS(runtime.NumCPU())
 	mr := setup()
 	for i := 0; i < 2; i++ {
 		go RunWorker(mr.address, port("worker"+strconv.Itoa(i)),
