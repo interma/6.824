@@ -92,7 +92,7 @@ func (mr *Master) schedule(phase jobPhase) {
 	for i := 0; i < ntasks; i++ {
 		idx := <-task_ch
 		if idx >= 0 {
-			i--
+			i-- // retry fail task
 			mr.fire_task_i(phase, idx, task_ch)
 		}
 	}
