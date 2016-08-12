@@ -13,11 +13,13 @@ func (mr *Master) fire_task_i(phase jobPhase, i int, task_ch chan int) {
 	}
 
 	//get worker
+	//worker := <- mr.registerChannel
 	<- mr.registerChannel
 	mr.Lock()
 	worker := mr.workers[0]
 	mr.workers = mr.workers[1:]
 	mr.Unlock()
+
 
 	//make args
 	args := new(DoTaskArgs)
@@ -34,6 +36,7 @@ func (mr *Master) fire_task_i(phase jobPhase, i int, task_ch chan int) {
 		rg_args := new(RegisterArgs)
 		rg_args.Worker = worker
 		mr.Register(rg_args, new(struct{}))
+
 
 		if ok == false {
 			fmt.Printf("DoTask: RPC %s error\n", worker)
