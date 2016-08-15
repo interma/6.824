@@ -31,8 +31,8 @@ const (
 	CANDIDATE
 	LEADER
 
-	TM_HB = 50	// heartbeat timeout
-	TM_EC = 150	// election timeout 150~300
+	TM_HB = 100	// heartbeat timeout
+	TM_EC = 300	// election timeout 150~300
 )
 
 //
@@ -76,6 +76,7 @@ type Raft struct {
 	//rv,ae rpc reply channel
 	rv_ch		chan RequestVoteReply
 	ae_ch		chan AppendEntriesReply
+	stop_ch		chan bool
 	//election,heartbeat timer
 	ec_timer	*time.Timer
 	hb_timer	*time.Timer
@@ -103,6 +104,8 @@ func (rf *Raft) GetState() (int, bool) {
 
 	term = rf.currentTerm
 	isleader = (rf.me == rf.leaderId)
+	
+	fmt.Printf("GetState S%v term[%v] isleader[%v]\n", rf.me, term, isleader)
 	return term, isleader
 }
 
@@ -134,39 +137,45 @@ func (rf *Raft) readPersist(data []byte) {
 	// d.Decode(&rf.yyy)
 }
 
+
 //
 // RequestVote RPC
 //
 type RequestVoteArgs struct {
-	term			int // candidate’s term
-	candidateId		int //candidate requesting vote
+	Term			int // candidate’s term
+	CandidateId		int //candidate requesting vote
 	//lastLogIndex	int //index of candidate’s last log entry (§5.4) 
 	//lastLogTerm		int //term of candidate’s last log entry (§5.4)
 }
 type RequestVoteReply struct {
-	term		int //currentTerm, for candidate to update itself 
-	voteGranted bool //true means candidate received vote
+	Term		int //currentTerm, for candidate to update itself 
+	VoteGranted bool //true means candidate received vote
 }
 func (rf *Raft) RequestVote(args RequestVoteArgs, reply *RequestVoteReply) {
 	// Your code here.
 	/*
 	1. Reply false if term < currentTerm (§5.1)
+	//If RPC request or response contains term T > currentTerm: set currentTerm = T, convert to follower (§5.1)
 	2. If votedFor is null or candidateId, and candidate’s log is at least as up-to-date as receiver’s log, grant vote (§5.2, §5.4)
 	*/
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
-	if args.term < rf.currentTerm {
-		reply.voteGranted = false
-		reply.term = -1
+	if args.Term < rf.currentTerm {
+		reply.VoteGranted = false
+		reply.Term = -1
 		return
+	} 
+
+	if args.Term > rf.currentTerm {
+		rf.to_follower(args.Term, -1)
 	}
 
-	reply.term = rf.currentTerm
-	if rf.votedFor < 0 || rf.votedFor == args.candidateId {
-		rf.votedFor = args.candidateId
-		reply.voteGranted = true
+	reply.Term = rf.currentTerm
+	if rf.votedFor < 0 || rf.votedFor == args.CandidateId {
+		rf.votedFor = args.CandidateId
+		reply.VoteGranted = true
 	} else {
-		reply.voteGranted = false
+		reply.VoteGranted = false
 	}
 }
 
@@ -196,8 +205,8 @@ func (rf *Raft) sendRequestVote(server int, args RequestVoteArgs, reply *Request
 // AppendEntries RPC
 //
 type AppendEntriesArgs struct {
-	term		int //leader’s term
-	leaderId	int //so follower can redirect clients
+	Term		int //leader’s term
+	LeaderId	int //so follower can redirect clients
 	/*
 	prevLogIndex //index of log entry immediately preceding new ones
 	prevLogTerm //term of prevLogIndex entry
@@ -206,28 +215,23 @@ type AppendEntriesArgs struct {
 	*/
 }
 type AppendEntriesReply struct {
-	term	int //currentTerm, for leader to update itself 
-	success bool //true if follower contained entry matching prevLogIndex and prevLogTerm
+	Term	int //currentTerm, for leader to update itself 
+	Success bool //true if follower contained entry matching prevLogIndex and prevLogTerm
 }
 func (rf *Raft) AppendEntries(args AppendEntriesArgs, reply *AppendEntriesReply) {
 	// Your code here.
 
-	reply.term = rf.currentTerm
 	//1. Reply false if term < currentTerm (§5.1)
-	if args.term < rf.currentTerm {
-		reply.success = false
+	if args.Term < rf.currentTerm {
+		reply.Success = false
 	} else {
-		reply.success = true
+		reply.Success = true
 		rf.mu.Lock()
 		defer rf.mu.Unlock()
-		
-		rf.role = FOLLOWER
-		ec_timeout := time.Duration(rand.Int63() % TM_EC + TM_EC) * time.Millisecond
-		hb_timeout := 100000 * time.Millisecond
 
-		rf.ec_timer.Reset(ec_timeout)
-		rf.hb_timer.Reset(hb_timeout)
+		rf.to_follower(args.Term, args.LeaderId);
 	}
+	reply.Term = rf.currentTerm
 }
 func (rf *Raft) sendAppendEntries(server int, args AppendEntriesArgs, reply *AppendEntriesReply) bool {
 	ok := rf.peers[server].Call("Raft.AppendEntries", args, reply)
@@ -265,12 +269,14 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 //
 func (rf *Raft) Kill() {
 	// Your code here, if desired.
+	rf.stop_ch <- true
 }
 
 func (rf *Raft) boatcastRV() {
+	fmt.Printf("boatcastRV, S%v\n", rf.me)
 	var args RequestVoteArgs
-	args.term = rf.currentTerm
-	args.candidateId = rf.me
+	args.Term = rf.currentTerm
+	args.CandidateId = rf.me
 	//TODO
 	//args.LastLogTerm = rf.getLastTerm()
 	//args.LastLogIndex = rf.getLastIndex()
@@ -289,9 +295,11 @@ func (rf *Raft) boatcastRV() {
 }
 
 func (rf *Raft) boatcastAE() {
+	fmt.Printf("boatcastAE, S%v\n", rf.me)
+	
 	var args AppendEntriesArgs
-	args.term = rf.currentTerm
-	args.leaderId = rf.me
+	args.Term = rf.currentTerm
+	args.LeaderId = rf.me
 
 	for i := range rf.peers {
 		if i != rf.me {
@@ -299,11 +307,47 @@ func (rf *Raft) boatcastAE() {
 				var reply AppendEntriesReply
 				ok := rf.sendAppendEntries(i, args, &reply)
 				if (ok) {
-					rf.ae_ch <- reply
+					//no need reply now
+					//rf.ae_ch <- reply
 				}
 			}(i)
 		}
 	}
+}
+
+
+func (rf *Raft) to_candidate() {
+	rf.role = CANDIDATE
+	ec_timeout := time.Duration(rand.Int63() % TM_EC + TM_EC) * time.Millisecond
+	hb_timeout := 100000 * time.Millisecond
+
+	rf.ec_timer.Reset(ec_timeout)
+	rf.hb_timer.Reset(hb_timeout)
+
+	rf.currentTerm++
+	rf.votedFor = rf.me
+	rf.recvedVoteNum = 1
+	rf.leaderId = -1
+}
+func (rf *Raft) to_follower(term int, leaderid int) {
+	rf.role = FOLLOWER
+	ec_timeout := time.Duration(rand.Int63() % TM_EC + TM_EC) * time.Millisecond
+	hb_timeout := 100000 * time.Millisecond
+
+	rf.ec_timer.Reset(ec_timeout)
+	rf.hb_timer.Reset(hb_timeout)
+
+	rf.currentTerm = term
+	rf.votedFor = -1
+	rf.recvedVoteNum = 1
+	rf.leaderId = leaderid
+}
+func (rf *Raft) to_leader() {
+	rf.role = LEADER
+	//rf.votedFor = -1
+	rf.leaderId = rf.me
+	rf.ec_timer.Reset(100000*time.Millisecond)
+	rf.hb_timer.Reset(TM_HB*time.Millisecond)
 }
 
 //
@@ -331,6 +375,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.role = FOLLOWER
 	rf.rv_ch = make(chan RequestVoteReply, 1)
 	rf.ae_ch = make(chan AppendEntriesReply, 1)
+	rf.stop_ch = make(chan bool,1)
 
 	// initialize from state persisted before a crash
 	//TODO
@@ -348,57 +393,56 @@ func Make(peers []*labrpc.ClientEnd, me int,
 			//wait event
 			select {
 			case <-rf.ec_timer.C:
+				fmt.Printf("election timeout, S%v\n", rf.me)
 				//do action
 				switch rf.role {
 				case FOLLOWER,CANDIDATE:
 					//Start a new round of elections
-					rf.role = CANDIDATE
-					rf.ec_timer.Reset(ec_timeout)
-
-					rf.currentTerm++
-					rf.votedFor = rf.me
-					rf.recvedVoteNum = 1
-					rf.leaderId = -1
-
+					rf.to_candidate()
 					rf.boatcastRV()
 				case LEADER:
 					fmt.Println("election timeout and is LEADER, do nothing")
 				}
 			case reply := <-rf.rv_ch:
+				fmt.Printf("recved RV reply, S%v %v\n", rf.me, reply)
+				
 				switch rf.role {
-				case CANDIDATE:
+				case CANDIDATE,FOLLOWER:
+					//FOLLOWER, granting vote to candidate: convert to candidate
+					rf.role = CANDIDATE
 					//check recv vote num
-					if reply.term > rf.currentTerm {
-						rf.currentTerm = reply.term
+					if reply.Term > rf.currentTerm {
+						rf.currentTerm = reply.Term
 					}
 
-					if reply.voteGranted {
+					if reply.VoteGranted {
 						rf.recvedVoteNum++
 					}
 
 					if rf.recvedVoteNum > len(rf.peers)/2 {
-						rf.role = LEADER
-						rf.leaderId = rf.me
-						rf.ec_timer.Reset(100000*time.Millisecond)
-						rf.hb_timer.Reset(TM_HB*time.Millisecond)
+						rf.to_leader()
 						//send ae rpc
 						rf.boatcastAE()
 					}
-				case FOLLOWER,LEADER:
-					fmt.Println("recv RV reply and is FOLLOWER/LEADER, do nothing!")
+				//case FOLLOWER,LEADER:
+				case LEADER:
+					fmt.Println("recv RV reply and is LEADER, do nothing!")
 				}
 			case reply := <-rf.ae_ch:
-				fmt.Println("recv ae reply:%t", reply.success)
+				fmt.Println("recv ae reply: %v", reply)
 				//do nothing
 			case <-rf.hb_timer.C:
 				switch rf.role {
 				case LEADER:
+					rf.ec_timer.Reset(100000*time.Millisecond)
 					rf.hb_timer.Reset(TM_HB*time.Millisecond)
 					//send ae rpc
 					rf.boatcastAE()
 				case FOLLOWER,CANDIDATE:
 					fmt.Println("heartbeat timeout and is FOLLOWER/CANDIDATE, do nothing!")
 				}
+			case <-rf.stop_ch:
+				fmt.Printf("S%v normal stop\n", rf.me)
 			}
 		}
 	}()

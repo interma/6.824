@@ -97,7 +97,7 @@ func (e *ClientEnd) Call(svcMeth string, args interface{}, reply interface{}) bo
 		rb := bytes.NewBuffer(rep.reply)
 		rd := gob.NewDecoder(rb)
 		if err := rd.Decode(reply); err != nil {
-			log.Fatalf("ClientEnd.Call(): decode reply: %v\n", err)
+			log.Fatalf("ClientEnd.Call(): decode reply: %v %v\n", err, reply)
 		}
 		return true
 	} else {

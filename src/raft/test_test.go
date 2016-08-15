@@ -52,11 +52,13 @@ func TestReElection(t *testing.T) {
 	// if the leader disconnects, a new one should be elected.
 	cfg.disconnect(leader1)
 	cfg.checkOneLeader()
+	fmt.Printf("  ... 1Passed\n")
 
 	// if the old leader rejoins, that shouldn't
 	// disturb the old leader.
 	cfg.connect(leader1)
 	leader2 := cfg.checkOneLeader()
+	fmt.Printf("  ... 2Passed\n")
 
 	// if there's no quorum, no leader should
 	// be elected.
@@ -64,10 +66,12 @@ func TestReElection(t *testing.T) {
 	cfg.disconnect((leader2 + 1) % servers)
 	time.Sleep(2 * RaftElectionTimeout)
 	cfg.checkNoLeader()
+	fmt.Printf("  ... 3Passed\n")
 
 	// if a quorum arises, it should elect a leader.
 	cfg.connect((leader2 + 1) % servers)
 	cfg.checkOneLeader()
+	fmt.Printf("  ... 4Passed\n")
 
 	// re-join of last node shouldn't prevent leader from existing.
 	cfg.connect(leader2)
@@ -76,7 +80,7 @@ func TestReElection(t *testing.T) {
 	fmt.Printf("  ... Passed\n")
 }
 
-func TestBasicAgree(t *testing.T) {
+func OTestBasicAgree(t *testing.T) {
 	servers := 5
 	cfg := make_config(t, servers, false)
 	defer cfg.cleanup()
@@ -99,7 +103,7 @@ func TestBasicAgree(t *testing.T) {
 	fmt.Printf("  ... Passed\n")
 }
 
-func TestFailAgree(t *testing.T) {
+func OTestFailAgree(t *testing.T) {
 	servers := 3
 	cfg := make_config(t, servers, false)
 	defer cfg.cleanup()
@@ -130,7 +134,7 @@ func TestFailAgree(t *testing.T) {
 	fmt.Printf("  ... Passed\n")
 }
 
-func TestFailNoAgree(t *testing.T) {
+func OTestFailNoAgree(t *testing.T) {
 	servers := 5
 	cfg := make_config(t, servers, false)
 	defer cfg.cleanup()
@@ -182,7 +186,7 @@ func TestFailNoAgree(t *testing.T) {
 	fmt.Printf("  ... Passed\n")
 }
 
-func TestConcurrentStarts(t *testing.T) {
+func OTestConcurrentStarts(t *testing.T) {
 	servers := 3
 	cfg := make_config(t, servers, false)
 	defer cfg.cleanup()
@@ -283,7 +287,7 @@ loop:
 	fmt.Printf("  ... Passed\n")
 }
 
-func TestRejoin(t *testing.T) {
+func OTestRejoin(t *testing.T) {
 	servers := 3
 	cfg := make_config(t, servers, false)
 	defer cfg.cleanup()
@@ -321,7 +325,7 @@ func TestRejoin(t *testing.T) {
 	fmt.Printf("  ... Passed\n")
 }
 
-func TestBackup(t *testing.T) {
+func OTestBackup(t *testing.T) {
 	servers := 5
 	cfg := make_config(t, servers, false)
 	defer cfg.cleanup()
@@ -393,7 +397,7 @@ func TestBackup(t *testing.T) {
 	fmt.Printf("  ... Passed\n")
 }
 
-func TestCount(t *testing.T) {
+func OTestCount(t *testing.T) {
 	servers := 3
 	cfg := make_config(t, servers, false)
 	defer cfg.cleanup()
@@ -503,7 +507,7 @@ loop:
 	fmt.Printf("  ... Passed\n")
 }
 
-func TestPersist1(t *testing.T) {
+func OTestPersist1(t *testing.T) {
 	servers := 3
 	cfg := make_config(t, servers, false)
 	defer cfg.cleanup()
@@ -549,7 +553,7 @@ func TestPersist1(t *testing.T) {
 	fmt.Printf("  ... Passed\n")
 }
 
-func TestPersist2(t *testing.T) {
+func OTestPersist2(t *testing.T) {
 	servers := 5
 	cfg := make_config(t, servers, false)
 	defer cfg.cleanup()
@@ -595,7 +599,7 @@ func TestPersist2(t *testing.T) {
 	fmt.Printf("  ... Passed\n")
 }
 
-func TestPersist3(t *testing.T) {
+func OTestPersist3(t *testing.T) {
 	servers := 3
 	cfg := make_config(t, servers, false)
 	defer cfg.cleanup()
@@ -635,7 +639,7 @@ func TestPersist3(t *testing.T) {
 // The leader in a new term may try to finish replicating log entries that
 // haven't been committed yet.
 //
-func TestFigure8(t *testing.T) {
+func OTestFigure8(t *testing.T) {
 	servers := 5
 	cfg := make_config(t, servers, false)
 	defer cfg.cleanup()
@@ -691,7 +695,7 @@ func TestFigure8(t *testing.T) {
 	fmt.Printf("  ... Passed\n")
 }
 
-func TestUnreliableAgree(t *testing.T) {
+func OTestUnreliableAgree(t *testing.T) {
 	servers := 5
 	cfg := make_config(t, servers, true)
 	defer cfg.cleanup()
@@ -720,7 +724,7 @@ func TestUnreliableAgree(t *testing.T) {
 	fmt.Printf("  ... Passed\n")
 }
 
-func TestFigure8Unreliable(t *testing.T) {
+func OTestFigure8Unreliable(t *testing.T) {
 	servers := 5
 	cfg := make_config(t, servers, true)
 	defer cfg.cleanup()
@@ -920,10 +924,10 @@ func internalChurn(t *testing.T, unreliable bool) {
 	fmt.Printf("  ... Passed\n")
 }
 
-func TestReliableChurn(t *testing.T) {
+func OTestReliableChurn(t *testing.T) {
 	internalChurn(t, false)
 }
 
-func TestUnreliableChurn(t *testing.T) {
+func OTestUnreliableChurn(t *testing.T) {
 	internalChurn(t, true)
 }
