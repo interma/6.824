@@ -137,6 +137,8 @@ func (rf *Raft) readPersist(data []byte) {
 	// d.Decode(&rf.yyy)
 }
 
+//*IMPORTANT*:
+//If RPC request or response contains term T > currentTerm: set currentTerm = T, convert to follower (§5.1)
 
 //
 // RequestVote RPC
@@ -155,7 +157,7 @@ func (rf *Raft) RequestVote(args RequestVoteArgs, reply *RequestVoteReply) {
 	// Your code here.
 	/*
 	1. Reply false if term < currentTerm (§5.1)
-	//If RPC request or response contains term T > currentTerm: set currentTerm = T, convert to follower (§5.1)
+	If RPC request or response contains term T > currentTerm: set currentTerm = T, convert to follower (§5.1)
 	2. If votedFor is null or candidateId, and candidate’s log is at least as up-to-date as receiver’s log, grant vote (§5.2, §5.4)
 	*/
 	rf.mu.Lock()
@@ -405,9 +407,14 @@ func Make(peers []*labrpc.ClientEnd, me int,
 				}
 			case reply := <-rf.rv_ch:
 				fmt.Printf("recved RV reply, S%v %v\n", rf.me, reply)
+				if reply.Term > rf.currentTerm {
+					rf.to_follower(reply.Term, -1)
+					continue
+				}
 				
 				switch rf.role {
-				case CANDIDATE,FOLLOWER:
+				//case CANDIDATE,FOLLOWER:
+				case CANDIDATE:
 					//FOLLOWER, granting vote to candidate: convert to candidate
 					rf.role = CANDIDATE
 					//check recv vote num
@@ -424,13 +431,17 @@ func Make(peers []*labrpc.ClientEnd, me int,
 						//send ae rpc
 						rf.boatcastAE()
 					}
-				//case FOLLOWER,LEADER:
-				case LEADER:
-					fmt.Println("recv RV reply and is LEADER, do nothing!")
+				//case LEADER:
+				case FOLLOWER,LEADER:
+					//fmt.Println("recv RV reply and is LEADER, do nothing!")
+					fmt.Println("recv RV reply and is FOLLOWER/LEADER, do nothing!")
 				}
 			case reply := <-rf.ae_ch:
 				fmt.Println("recv ae reply: %v", reply)
-				//do nothing
+				if reply.Term > rf.currentTerm {
+					rf.to_follower(reply.Term, -1)
+					continue
+				}
 			case <-rf.hb_timer.C:
 				switch rf.role {
 				case LEADER:
