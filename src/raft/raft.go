@@ -263,7 +263,9 @@ func (rf *Raft) AppendEntries(args AppendEntriesArgs, reply *AppendEntriesReply)
 	for i:=0; i<len(args.Entries); i++ {
 		//4. Append any new entries not already in the log
 		entry := args.Entries[i]
+		//fmt.Printf("debug entry:%v\n", entry)
 		rf.log = append(rf.log, LogEntry{LogTerm:entry.LogTerm, LogCmd:entry.LogCmd}) 
+		fmt.Printf("show S%v log:%v\n", rf.me, rf.log)
 	}
 		
 	//5. If leaderCommit > commitIndex, set commitIndex = min(leaderCommit, index of last new entry)
@@ -315,6 +317,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	}
 
 	//If command received from client: append entry to local log, respond after entry applied to state machine (§5.3)
+	index = rf.getLastIndex() + 1
 	rf.log = append(rf.log, LogEntry{LogTerm:term, LogCmd:command}) 
 	//index = rf.getLastIndex() + 1
 	//rf.log = append(rf.log, LogEntry{LogTerm:term,LogCmd:command,LogIndex:index}) 
@@ -336,9 +339,19 @@ func (rf *Raft) Kill() {
 }
 
 func (rf *Raft) doApply() {
-	//TODO
+	//fmt.Printf("begin doApply S%v %v %v\n", rf.me, rf.commitIndex,rf.lastApplied)
+	
 	//If commitIndex > lastApplied: increment lastApplied, apply log[lastApplied] to state machine (§5.3)
+	if rf.commitIndex > rf.lastApplied {
+		rf.lastApplied++
+		msg := ApplyMsg{Index:rf.lastApplied,Command:rf.log[rf.lastApplied].LogCmd}
+		
+		fmt.Printf("apply msg S%v [%v]\n", rf.me, msg)
 
+		go func() {
+			rf.apply_ch <- msg
+		}()
+	}
 }
 
 func (rf *Raft) boardcastRV() {
@@ -382,15 +395,17 @@ func (rf *Raft) boardcastAE() {
 		if i != rf.me {
 			go func(i int) {
 				//fmt.Printf("\tdebug in go %v\n", i)
-				args.PrevLogIndex = rf.nextIndex[i] - 1
+				args.PrevLogIndex = rf.nextIndex[i]-1
 				args.PrevLogTerm = rf.log[args.PrevLogIndex].LogTerm
 				//If last log index ≥ nextIndex for a follower: send AppendEntries RPC with log entries starting at nextIndex
-				if len(rf.log) < rf.nextIndex[i] {
+				log_cnt := len(rf.log)-args.PrevLogIndex-1
+				if log_cnt <= 0 {
 					args.Entries = make([]LogEntry, 0 )
 				} else {
-					args.Entries = make([]LogEntry, len(rf.log)-args.PrevLogIndex )
-					copy(args.Entries, rf.log[args.PrevLogIndex:])
+					args.Entries = make([]LogEntry, log_cnt )
+					copy(args.Entries, rf.log[args.PrevLogIndex+1:])
 				}
+				fmt.Printf("ae send log[%v:len%v,%v] to S%v\n", args.PrevLogIndex+1, log_cnt, args.Entries, i)
 				
 				var reply AppendEntriesReply
 				ok := rf.sendAppendEntries(i, args, &reply)
@@ -556,25 +571,30 @@ func Make(peers []*labrpc.ClientEnd, me int,
 					rf.to_follower(reply.Term, -1)
 				}
 				if reply.Success && rf.me == rf.leaderId {
+					//fmt.Printf("show matchIndex %v %v\n", rf.matchIndex, rf.log)
+					
 					//only leader recv AE reply in here?
-					//If there exists an N such that N > commitIndex, a majority of matchIndex[i] ≥ N, and log[N].term == currentTerm: set commitIndex = N (§5.3, §5.4).
-					N := rf.commitIndex 
-					for {
+					
+					//If there *exists* an N such that N > commitIndex, a majority of matchIndex[i] ≥ N, and log[N].term == currentTerm: set commitIndex = N (§5.3, §5.4).
+					N := rf.commitIndex
+					last := rf.getLastIndex()
+					for i:= rf.commitIndex + 1; i <= last; i++ { 
+						if rf.log[i].LogTerm != rf.currentTerm {
+							continue
+						}
+				
 						var cnt int = 0
-						for i := range rf.peers {
-							if rf.matchIndex[i] >= N {
+						for j := range rf.peers {
+							if rf.matchIndex[j] >= i {
 								cnt++
 							}
 						}
-						if cnt > len(rf.peers)/2 && 
-							len(rf.log) >=N && rf.log[N].LogTerm == rf.currentTerm {
-							N++
-						} else {
-							break
+						if cnt > len(rf.peers)/2 {
+							N = i
 						}
 					}
 					rf.commitIndex = N
-					
+					rf.doApply()
 				}
 
 				rf.mu.Unlock()
