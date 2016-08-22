@@ -344,13 +344,10 @@ func (rf *Raft) doApply() {
 	//If commitIndex > lastApplied: increment lastApplied, apply log[lastApplied] to state machine (§5.3)
 	if rf.commitIndex > rf.lastApplied {
 		rf.lastApplied++
-		msg := ApplyMsg{Index:rf.lastApplied,Command:rf.log[rf.lastApplied].LogCmd}
 		
+		msg := ApplyMsg{Index:rf.lastApplied,Command:rf.log[rf.lastApplied].LogCmd}
 		fmt.Printf("apply msg S%v [%v]\n", rf.me, msg)
-
-		go func() {
-			rf.apply_ch <- msg
-		}()
+		rf.apply_ch <- msg
 	}
 }
 
@@ -386,14 +383,14 @@ func (rf *Raft) boardcastAE() {
 	Entries		[]LogEntry //log entries to store (empty for heartbeat; may send more than one for efficiency) 
 	LeaderCommit	int //leader’s commitIndex
 	*/
-	var args AppendEntriesArgs
-	args.Term = rf.currentTerm
-	args.LeaderId = rf.me
-	args.LeaderCommit = rf.commitIndex
 
 	for i := range rf.peers {
 		if i != rf.me {
 			go func(i int) {
+				var args AppendEntriesArgs
+				args.Term = rf.currentTerm
+				args.LeaderId = rf.me
+				args.LeaderCommit = rf.commitIndex
 				//fmt.Printf("\tdebug in go %v\n", i)
 				args.PrevLogIndex = rf.nextIndex[i]-1
 				args.PrevLogTerm = rf.log[args.PrevLogIndex].LogTerm
@@ -571,7 +568,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 					rf.to_follower(reply.Term, -1)
 				}
 				if reply.Success && rf.me == rf.leaderId {
-					//fmt.Printf("show matchIndex %v %v\n", rf.matchIndex, rf.log)
+					fmt.Printf("show matchIndex %v %v\n", rf.matchIndex, rf.log)
 					
 					//only leader recv AE reply in here?
 					
@@ -583,7 +580,8 @@ func Make(peers []*labrpc.ClientEnd, me int,
 							continue
 						}
 				
-						var cnt int = 0
+						//var cnt int = 0
+						var cnt int = 1 //leader always match itself
 						for j := range rf.peers {
 							if rf.matchIndex[j] >= i {
 								cnt++

@@ -80,7 +80,7 @@ func OTestReElection(t *testing.T) {
 	fmt.Printf("  ... Passed\n")
 }
 
-func TestBasicAgree(t *testing.T) {
+func OTestBasicAgree(t *testing.T) {
 	servers := 5
 	cfg := make_config(t, servers, false)
 	defer cfg.cleanup()
@@ -325,7 +325,7 @@ func OTestRejoin(t *testing.T) {
 	fmt.Printf("  ... Passed\n")
 }
 
-func OTestBackup(t *testing.T) {
+func TestBackup(t *testing.T) {
 	servers := 5
 	cfg := make_config(t, servers, false)
 	defer cfg.cleanup()
