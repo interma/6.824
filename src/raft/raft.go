@@ -75,12 +75,14 @@ type Raft struct {
 	log[]	log entries; each entry contains command for state machine, and term when entry was received by leader (first index is 1)
 	*/
 
+	//Updated on stable storage before responding to RPCs
 	currentTerm		int
 	votedFor		int
+	log		[]LogEntry //first Index is 1
+
 	recvedVoteNum	int
 	leaderId		int
 	role			int
-	log		[]LogEntry //first Index is 1
 	
 	//rv,ae rpc reply channel
 	rv_ch		chan RequestVoteReply
@@ -138,6 +140,7 @@ func (rf *Raft) getLastTerm() int {
 // see paper's Figure 2 for a description of what should be persistent.
 //
 func (rf *Raft) persist() {
+	//Updated on stable storage before responding to RPCs
 	w := new(bytes.Buffer)
 	e := gob.NewEncoder(w)
 	e.Encode(rf.currentTerm)
@@ -199,6 +202,7 @@ func (rf *Raft) RequestVote(args RequestVoteArgs, reply *RequestVoteReply) {
 	} else {
 		reply.VoteGranted = false
 	}
+	rf.persist()
 }
 
 //
@@ -237,17 +241,35 @@ type AppendEntriesArgs struct {
 type AppendEntriesReply struct {
 	Term	int //currentTerm, for leader to update itself 
 	Success bool //true if follower contained entry matching prevLogIndex and prevLogTerm
+	NextIndex int //for back up quickly
 }
+
 func (rf *Raft) AppendEntries(args AppendEntriesArgs, reply *AppendEntriesReply) {
 	// Your code here.
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
+
+	reply.NextIndex = rf.getLastIndex() + 1
 	
-	if	args.Term < rf.currentTerm ||
-		args.PrevLogIndex > rf.getLastIndex() || 
-		args.PrevLogTerm != rf.log[args.PrevLogIndex].LogTerm {
+	if args.Term < rf.currentTerm || args.PrevLogIndex > rf.getLastIndex() {
 		//1. Reply false if term < currentTerm (§5.1)
+		reply.Success = false
+		reply.Term = rf.currentTerm
+		return
+	}
+	
+	cur_term := rf.log[args.PrevLogIndex].LogTerm
+	if args.PrevLogTerm != cur_term {
 		//2. Reply false if log doesn’t contain an entry at prevLogIndex whose term matches prevLogTerm (§5.3)
+
+		//skip a term for back up quickly
+		for i := args.PrevLogIndex - 1 ; i >= 0; i-- {
+			if rf.log[i].LogTerm != cur_term {
+				reply.NextIndex = i + 1
+				break
+			}
+		}
+
 		reply.Success = false
 		reply.Term = rf.currentTerm
 		return
@@ -279,11 +301,11 @@ func (rf *Raft) AppendEntries(args AppendEntriesArgs, reply *AppendEntriesReply)
 
 	//and do apply
 	rf.doApply()
-
 	
 	reply.Success = true
 	rf.to_follower(args.Term, args.LeaderId);
 	reply.Term = rf.currentTerm
+	rf.persist()
 }
 func (rf *Raft) sendAppendEntries(server int, args AppendEntriesArgs, reply *AppendEntriesReply) bool {
 	ok := rf.peers[server].Call("Raft.AppendEntries", args, reply)
@@ -321,7 +343,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	rf.log = append(rf.log, LogEntry{LogTerm:term, LogCmd:command}) 
 	//index = rf.getLastIndex() + 1
 	//rf.log = append(rf.log, LogEntry{LogTerm:term,LogCmd:command,LogIndex:index}) 
-	//rf.persist()
+	rf.persist()
 
 	//use ApplyMsg inform client 
 	return index, term, isLeader
@@ -402,7 +424,8 @@ func (rf *Raft) boardcastAE() {
 					args.Entries = make([]LogEntry, log_cnt )
 					copy(args.Entries, rf.log[args.PrevLogIndex+1:])
 				}
-				fmt.Printf("ae send log[%v:len%v,%v] to S%v\n", args.PrevLogIndex+1, log_cnt, args.Entries, i)
+				//fmt.Printf("ae send log[%v:len%v,%v] to S%v\n", args.PrevLogIndex+1, log_cnt, args.Entries, i)
+				fmt.Printf("ae send log[%v:len%v] to S%v\n", args.PrevLogIndex+1, log_cnt, i)
 				
 				var reply AppendEntriesReply
 				ok := rf.sendAppendEntries(i, args, &reply)
@@ -414,7 +437,8 @@ func (rf *Raft) boardcastAE() {
 						rf.nextIndex[i] = len(rf.log)
 						rf.matchIndex[i] = len(rf.log)-1
 					} else {
-						rf.nextIndex[i]-- //slow backtrace
+						//rf.nextIndex[i]-- //slow backtrace
+						rf.nextIndex[i] = reply.NextIndex //quick backtrace
 					}
 					
 					//no need reply now
@@ -439,6 +463,7 @@ func (rf *Raft) to_candidate() {
 	rf.votedFor = rf.me
 	rf.recvedVoteNum = 1
 	rf.leaderId = -1
+	rf.persist()
 }
 func (rf *Raft) to_follower(term int, leaderid int) {
 	rf.role = FOLLOWER
@@ -568,7 +593,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 					rf.to_follower(reply.Term, -1)
 				}
 				if reply.Success && rf.me == rf.leaderId {
-					fmt.Printf("show matchIndex %v %v\n", rf.matchIndex, rf.log)
+					//fmt.Printf("show matchIndex %v %v\n", rf.matchIndex, rf.log)
 					
 					//only leader recv AE reply in here?
 					

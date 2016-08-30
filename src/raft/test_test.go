@@ -325,7 +325,7 @@ func OTestRejoin(t *testing.T) {
 	fmt.Printf("  ... Passed\n")
 }
 
-func TestBackup(t *testing.T) {
+func OTestBackup(t *testing.T) {
 	servers := 5
 	cfg := make_config(t, servers, false)
 	defer cfg.cleanup()
@@ -553,7 +553,7 @@ func OTestPersist1(t *testing.T) {
 	fmt.Printf("  ... Passed\n")
 }
 
-func OTestPersist2(t *testing.T) {
+func TestPersist2(t *testing.T) {
 	servers := 5
 	cfg := make_config(t, servers, false)
 	defer cfg.cleanup()
