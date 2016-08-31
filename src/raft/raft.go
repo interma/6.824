@@ -181,6 +181,8 @@ func (rf *Raft) RequestVote(args RequestVoteArgs, reply *RequestVoteReply) {
 	// Your code here.
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
+	defer rf.persist()
+
 	if args.Term < rf.currentTerm {
 		//1. Reply false if term < currentTerm (§5.1)
 		reply.VoteGranted = false
@@ -202,7 +204,6 @@ func (rf *Raft) RequestVote(args RequestVoteArgs, reply *RequestVoteReply) {
 	} else {
 		reply.VoteGranted = false
 	}
-	rf.persist()
 }
 
 //
@@ -248,6 +249,8 @@ func (rf *Raft) AppendEntries(args AppendEntriesArgs, reply *AppendEntriesReply)
 	// Your code here.
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
+	defer rf.persist()
+
 
 	reply.NextIndex = rf.getLastIndex() + 1
 	
@@ -258,6 +261,12 @@ func (rf *Raft) AppendEntries(args AppendEntriesArgs, reply *AppendEntriesReply)
 		return
 	}
 	
+	if args.Term > rf.currentTerm {
+		//If RPC request or response contains term T > currentTerm: set currentTerm = T, convert to follower (§5.1)
+		rf.to_follower(args.Term, -1)
+	}
+	
+	reply.Term = rf.currentTerm
 	cur_term := rf.log[args.PrevLogIndex].LogTerm
 	if args.PrevLogTerm != cur_term {
 		//2. Reply false if log doesn’t contain an entry at prevLogIndex whose term matches prevLogTerm (§5.3)
@@ -271,23 +280,25 @@ func (rf *Raft) AppendEntries(args AppendEntriesArgs, reply *AppendEntriesReply)
 		}
 
 		reply.Success = false
-		reply.Term = rf.currentTerm
 		return
 	} 
 	
 	//3. If an existing entry conflicts with a new one (same index but different terms), delete the existing entry and all that follow it (§5.3)
-	if args.PrevLogIndex < len(rf.log) {
-		//args.Entries[i].LogTerm != rf.log[args.PrevLogIndex+i].LogTerm {
-		//truncate log
-		rf.log = rf.log[0:args.PrevLogIndex+1]
-	}
-		
+	//4. Append any new entries not already in the log
 	for i:=0; i<len(args.Entries); i++ {
-		//4. Append any new entries not already in the log
 		entry := args.Entries[i]
+		idx := args.PrevLogIndex+1+i
+		if idx > rf.getLastIndex() {
+			//append
+			rf.log = append(rf.log, LogEntry{LogTerm:entry.LogTerm, LogCmd:entry.LogCmd}) 
+		} else {
+			if entry.LogTerm != rf.log[idx].LogTerm {
+				//truncate
+				rf.log = rf.log[0:idx+1]
+			}
+			rf.log[idx] = entry
+		}
 		//fmt.Printf("debug entry:%v\n", entry)
-		rf.log = append(rf.log, LogEntry{LogTerm:entry.LogTerm, LogCmd:entry.LogCmd}) 
-		fmt.Printf("show S%v log:%v\n", rf.me, rf.log)
 	}
 		
 	//5. If leaderCommit > commitIndex, set commitIndex = min(leaderCommit, index of last new entry)
@@ -298,15 +309,16 @@ func (rf *Raft) AppendEntries(args AppendEntriesArgs, reply *AppendEntriesReply)
 		}
 		rf.commitIndex = min
 	}
+	
+	fmt.Printf("show S%v term:%v commitIndex:%v log:%v\n", rf.me, rf.currentTerm, rf.commitIndex, rf.log)
 
 	//and do apply
 	rf.doApply()
 	
 	reply.Success = true
 	rf.to_follower(args.Term, args.LeaderId);
-	reply.Term = rf.currentTerm
-	rf.persist()
 }
+
 func (rf *Raft) sendAppendEntries(server int, args AppendEntriesArgs, reply *AppendEntriesReply) bool {
 	ok := rf.peers[server].Call("Raft.AppendEntries", args, reply)
 	//fmt.Printf("\tdebug in AppendEntries end reply%v\n",reply)
@@ -375,27 +387,27 @@ func (rf *Raft) doApply() {
 
 func (rf *Raft) boardcastRV() {
 	fmt.Printf("boardcastRV S%v\n", rf.me)
-	var args RequestVoteArgs
-	args.Term = rf.currentTerm
-	args.CandidateId = rf.me
-	args.LastLogTerm = rf.getLastTerm()
-	args.LastLogIndex = rf.getLastIndex()
 
 	for i := range rf.peers {
+		var args RequestVoteArgs
+		args.Term = rf.currentTerm
+		args.CandidateId = rf.me
+		args.LastLogTerm = rf.getLastTerm()
+		args.LastLogIndex = rf.getLastIndex()
 		if i != rf.me {
-			go func(i int) {
+			go func(i int, args RequestVoteArgs) {
 				var reply RequestVoteReply
 				ok := rf.sendRequestVote(i, args, &reply)
 				if (ok) {
 					rf.rv_ch <- reply
 				}
-			}(i)
+			}(i, args)
 		}
 	}
 }
 
 func (rf *Raft) boardcastAE() {
-	fmt.Printf("boardcastAE S%v\n", rf.me)
+	fmt.Printf("boardcastAE S%v term:%v log:%v\n", rf.me, rf.currentTerm, rf.log)
 	
 	/*
 	Term		int //leader’s term
@@ -408,24 +420,25 @@ func (rf *Raft) boardcastAE() {
 
 	for i := range rf.peers {
 		if i != rf.me {
-			go func(i int) {
-				var args AppendEntriesArgs
-				args.Term = rf.currentTerm
-				args.LeaderId = rf.me
-				args.LeaderCommit = rf.commitIndex
-				//fmt.Printf("\tdebug in go %v\n", i)
-				args.PrevLogIndex = rf.nextIndex[i]-1
-				args.PrevLogTerm = rf.log[args.PrevLogIndex].LogTerm
-				//If last log index ≥ nextIndex for a follower: send AppendEntries RPC with log entries starting at nextIndex
-				log_cnt := len(rf.log)-args.PrevLogIndex-1
-				if log_cnt <= 0 {
-					args.Entries = make([]LogEntry, 0 )
-				} else {
-					args.Entries = make([]LogEntry, log_cnt )
-					copy(args.Entries, rf.log[args.PrevLogIndex+1:])
-				}
-				//fmt.Printf("ae send log[%v:len%v,%v] to S%v\n", args.PrevLogIndex+1, log_cnt, args.Entries, i)
-				fmt.Printf("ae send log[%v:len%v] to S%v\n", args.PrevLogIndex+1, log_cnt, i)
+			var args AppendEntriesArgs
+			args.Term = rf.currentTerm
+			args.LeaderId = rf.me
+			args.LeaderCommit = rf.commitIndex
+			//fmt.Printf("\tdebug in go %v\n", i)
+			args.PrevLogIndex = rf.nextIndex[i]-1
+			args.PrevLogTerm = rf.log[args.PrevLogIndex].LogTerm
+			//If last log index ≥ nextIndex for a follower: send AppendEntries RPC with log entries starting at nextIndex
+			log_cnt := len(rf.log)-args.PrevLogIndex-1
+			if log_cnt <= 0 {
+				args.Entries = make([]LogEntry, 0 )
+			} else {
+				args.Entries = make([]LogEntry, log_cnt )
+				copy(args.Entries, rf.log[args.PrevLogIndex+1:])
+			}
+
+			go func(i int, args AppendEntriesArgs) {
+				fmt.Printf("ae send log[%v:term%v:len%v,%v] S%v to S%v\n", args.PrevLogIndex+1,args.Term, log_cnt, args.Entries, rf.me, i)
+				//fmt.Printf("ae send log[%v:len%v] to S%v\n", args.PrevLogIndex+1, log_cnt, i)
 				
 				var reply AppendEntriesReply
 				ok := rf.sendAppendEntries(i, args, &reply)
@@ -445,13 +458,14 @@ func (rf *Raft) boardcastAE() {
 					rf.ae_ch <- reply
 					//fmt.Printf("\tdebug after <- in go %v\n", i)
 				}
-			}(i)
+			}(i,args)
 		}
 	}
 }
 
 
 func (rf *Raft) to_candidate() {
+	defer rf.persist()
 	rf.role = CANDIDATE
 	ec_timeout := time.Duration(rand.Int63() % TM_EC + TM_EC) * time.Millisecond
 	hb_timeout := 100000 * time.Millisecond
@@ -463,9 +477,9 @@ func (rf *Raft) to_candidate() {
 	rf.votedFor = rf.me
 	rf.recvedVoteNum = 1
 	rf.leaderId = -1
-	rf.persist()
 }
 func (rf *Raft) to_follower(term int, leaderid int) {
+	defer rf.persist()
 	rf.role = FOLLOWER
 	ec_timeout := time.Duration(rand.Int63() % TM_EC + TM_EC) * time.Millisecond
 	hb_timeout := 100000 * time.Millisecond
@@ -479,6 +493,7 @@ func (rf *Raft) to_follower(term int, leaderid int) {
 	rf.leaderId = leaderid
 }
 func (rf *Raft) to_leader() {
+	defer rf.persist()
 	rf.role = LEADER
 	//rf.votedFor = -1
 	rf.leaderId = rf.me
@@ -531,6 +546,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 
 	// initialize from state persisted before a crash
 	rf.readPersist(persister.ReadRaftState())
+	fmt.Printf("reboot S%v, term:%v\n", rf.me, rf.currentTerm)
 
 	go func() {
 		//set init ec timer
@@ -569,6 +585,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 						//check recv vote num
 						if reply.Term > rf.currentTerm {
 							rf.currentTerm = reply.Term
+							rf.persist()
 						}
 						if reply.VoteGranted {
 							rf.recvedVoteNum++
@@ -617,6 +634,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 						}
 					}
 					rf.commitIndex = N
+					//fmt.Printf("set commitIndex=%v S%v log:%v\n", N, rf.me, rf.log)
 					rf.doApply()
 				}
 
@@ -628,9 +646,9 @@ func Make(peers []*labrpc.ClientEnd, me int,
 					rf.mu.Lock()
 					rf.ec_timer.Reset(100000*time.Millisecond)
 					rf.hb_timer.Reset(TM_HB*time.Millisecond)
-					rf.mu.Unlock()
 					//send ae rpc
 					rf.boardcastAE()
+					rf.mu.Unlock()
 				case FOLLOWER,CANDIDATE:
 					fmt.Println("heartbeat timeout and is FOLLOWER/CANDIDATE, do nothing!")
 				}
