@@ -385,6 +385,8 @@ func (rf *Raft) doApply() {
 	}
 }
 
+// both boardcast func should lock 
+// caller *must lock* in outside 
 func (rf *Raft) boardcastRV() {
 	fmt.Printf("boardcastRV S%v\n", rf.me)
 
@@ -406,6 +408,7 @@ func (rf *Raft) boardcastRV() {
 	}
 }
 
+// caller *must lock* in outside 
 func (rf *Raft) boardcastAE() {
 	fmt.Printf("boardcastAE S%v term:%v log:%v\n", rf.me, rf.currentTerm, rf.log)
 	
@@ -435,7 +438,9 @@ func (rf *Raft) boardcastAE() {
 				args.Entries = make([]LogEntry, log_cnt )
 				copy(args.Entries, rf.log[args.PrevLogIndex+1:])
 			}
-
+	
+			//bug FIX, mutex not lock go{}code
+			//so every global vars in go{}code should be used carefully...
 			go func(i int, args AppendEntriesArgs) {
 				fmt.Printf("ae send log[%v:term%v:len%v,%v] S%v to S%v\n", args.PrevLogIndex+1,args.Term, log_cnt, args.Entries, rf.me, i)
 				//fmt.Printf("ae send log[%v:len%v] to S%v\n", args.PrevLogIndex+1, log_cnt, i)
@@ -447,8 +452,10 @@ func (rf *Raft) boardcastAE() {
 					//• If successful: update nextIndex and matchIndex for follower (§5.3)
 					//• If AppendEntries fails because of log inconsistency:decrement nextIndex and retry (§5.3)
 					if reply.Success {
-						rf.nextIndex[i] = len(rf.log)
-						rf.matchIndex[i] = len(rf.log)-1
+						//rf.nextIndex[i] = len(rf.log)
+						//rf.matchIndex[i] = len(rf.log)-1
+						rf.nextIndex[i] = len(args.Entries)+args.PrevLogIndex+1
+						rf.matchIndex[i] = len(args.Entries)+args.PrevLogIndex
 					} else {
 						//rf.nextIndex[i]-- //slow backtrace
 						rf.nextIndex[i] = reply.NextIndex //quick backtrace
@@ -537,7 +544,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	//rf.rv_ch = make(chan RequestVoteReply, 1) //FIXME 1 to small, will block!
 	rf.rv_ch = make(chan RequestVoteReply, 100)
 	rf.ae_ch = make(chan AppendEntriesReply, 100)
-	rf.stop_ch = make(chan bool,1)
+	rf.stop_ch = make(chan bool)
 
 	rf.commitIndex = 0
 	rf.lastApplied = 0
@@ -654,6 +661,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 				}
 			case <-rf.stop_ch:
 				fmt.Printf("S%v normal stop\n", rf.me)
+				return
 			}
 		}
 	}()
