@@ -19,7 +19,7 @@ import "sync"
 // (much more than the paper's range of timeouts).
 const RaftElectionTimeout = 1000 * time.Millisecond
 
-func TestInitialElection(t *testing.T) {
+func OTestInitialElection(t *testing.T) {
 	servers := 3
 	cfg := make_config(t, servers, false)
 	defer cfg.cleanup()
@@ -40,7 +40,7 @@ func TestInitialElection(t *testing.T) {
 	fmt.Printf("  ... Passed\n")
 }
 
-func TestReElection(t *testing.T) {
+func OTestReElection(t *testing.T) {
 	servers := 3
 	cfg := make_config(t, servers, false)
 	defer cfg.cleanup()
@@ -80,7 +80,7 @@ func TestReElection(t *testing.T) {
 	fmt.Printf("  ... Passed\n")
 }
 
-func TestBasicAgree(t *testing.T) {
+func OTestBasicAgree(t *testing.T) {
 	servers := 5
 	cfg := make_config(t, servers, false)
 	defer cfg.cleanup()
@@ -103,7 +103,7 @@ func TestBasicAgree(t *testing.T) {
 	fmt.Printf("  ... Passed\n")
 }
 
-func TestFailAgree(t *testing.T) {
+func OTestFailAgree(t *testing.T) {
 	servers := 3
 	cfg := make_config(t, servers, false)
 	defer cfg.cleanup()
@@ -134,7 +134,7 @@ func TestFailAgree(t *testing.T) {
 	fmt.Printf("  ... Passed\n")
 }
 
-func TestFailNoAgree(t *testing.T) {
+func OTestFailNoAgree(t *testing.T) {
 	servers := 5
 	cfg := make_config(t, servers, false)
 	defer cfg.cleanup()
@@ -186,7 +186,7 @@ func TestFailNoAgree(t *testing.T) {
 	fmt.Printf("  ... Passed\n")
 }
 
-func TestConcurrentStarts(t *testing.T) {
+func OTestConcurrentStarts(t *testing.T) {
 	servers := 3
 	cfg := make_config(t, servers, false)
 	defer cfg.cleanup()
@@ -287,7 +287,7 @@ loop:
 	fmt.Printf("  ... Passed\n")
 }
 
-func TestRejoin(t *testing.T) {
+func OTestRejoin(t *testing.T) {
 	servers := 3
 	cfg := make_config(t, servers, false)
 	defer cfg.cleanup()
@@ -325,7 +325,7 @@ func TestRejoin(t *testing.T) {
 	fmt.Printf("  ... Passed\n")
 }
 
-func TestBackup(t *testing.T) {
+func OTestBackup(t *testing.T) {
 	servers := 5
 	cfg := make_config(t, servers, false)
 	defer cfg.cleanup()
@@ -397,7 +397,7 @@ func TestBackup(t *testing.T) {
 	fmt.Printf("  ... Passed\n")
 }
 
-func TestCount(t *testing.T) {
+func OTestCount(t *testing.T) {
 	servers := 3
 	cfg := make_config(t, servers, false)
 	defer cfg.cleanup()
@@ -507,7 +507,7 @@ loop:
 	fmt.Printf("  ... Passed\n")
 }
 
-func TestPersist1(t *testing.T) {
+func OTestPersist1(t *testing.T) {
 	servers := 3
 	cfg := make_config(t, servers, false)
 	defer cfg.cleanup()
@@ -553,7 +553,7 @@ func TestPersist1(t *testing.T) {
 	fmt.Printf("  ... Passed\n")
 }
 
-func TestPersist2(t *testing.T) {
+func OTestPersist2(t *testing.T) {
 	servers := 5
 	cfg := make_config(t, servers, false)
 	defer cfg.cleanup()
@@ -599,7 +599,7 @@ func TestPersist2(t *testing.T) {
 	fmt.Printf("  ... Passed\n")
 }
 
-func TestPersist3(t *testing.T) {
+func OTestPersist3(t *testing.T) {
 	servers := 3
 	cfg := make_config(t, servers, false)
 	defer cfg.cleanup()
@@ -639,7 +639,7 @@ func TestPersist3(t *testing.T) {
 // The leader in a new term may try to finish replicating log entries that
 // haven't been committed yet.
 //
-func OTestFigure8(t *testing.T) {
+func TestFigure8(t *testing.T) {
 	servers := 5
 	cfg := make_config(t, servers, false)
 	defer cfg.cleanup()
@@ -695,7 +695,7 @@ func OTestFigure8(t *testing.T) {
 	fmt.Printf("  ... Passed\n")
 }
 
-func OTestUnreliableAgree(t *testing.T) {
+func TestUnreliableAgree(t *testing.T) {
 	servers := 5
 	cfg := make_config(t, servers, true)
 	defer cfg.cleanup()
@@ -724,7 +724,7 @@ func OTestUnreliableAgree(t *testing.T) {
 	fmt.Printf("  ... Passed\n")
 }
 
-func OTestFigure8Unreliable(t *testing.T) {
+func TestFigure8Unreliable(t *testing.T) {
 	servers := 5
 	cfg := make_config(t, servers, true)
 	defer cfg.cleanup()
@@ -921,13 +921,13 @@ func internalChurn(t *testing.T, unreliable bool) {
 		}
 	}
 
-	fmt.Printf("  ... Passed\n")
+	fmt.Printf("  ... final Passed\n")
 }
 
-func OTestReliableChurn(t *testing.T) {
+func TestReliableChurn(t *testing.T) {
 	internalChurn(t, false)
 }
 
-func OTestUnreliableChurn(t *testing.T) {
+func TestUnreliableChurn(t *testing.T) {
 	internalChurn(t, true)
 }

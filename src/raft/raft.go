@@ -372,16 +372,21 @@ func (rf *Raft) Kill() {
 	rf.stop_ch <- true
 }
 
+// caller *must lock* in outside 
 func (rf *Raft) doApply() {
 	//fmt.Printf("begin doApply S%v %v %v\n", rf.me, rf.commitIndex,rf.lastApplied)
 	
 	//If commitIndex > lastApplied: increment lastApplied, apply log[lastApplied] to state machine (§5.3)
-	if rf.commitIndex > rf.lastApplied {
-		rf.lastApplied++
-		
-		msg := ApplyMsg{Index:rf.lastApplied,Command:rf.log[rf.lastApplied].LogCmd}
-		fmt.Printf("apply msg S%v [%v]\n", rf.me, msg)
-		rf.apply_ch <- msg
+	for {
+		if rf.commitIndex > rf.lastApplied {
+			rf.lastApplied++
+
+			msg := ApplyMsg{Index:rf.lastApplied,Command:rf.log[rf.lastApplied].LogCmd}
+			fmt.Printf("apply msg S%v [%v]\n", rf.me, msg)
+			rf.apply_ch <- msg
+		} else {
+			break
+		}
 	}
 }
 
