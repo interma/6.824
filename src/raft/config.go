@@ -144,6 +144,7 @@ func (cfg *config) start1(i int) {
 	applyCh := make(chan ApplyMsg)
 	go func() {
 		for m := range applyCh {
+			fmt.Printf("S%v SM recv apply msg:%v\n", i, m)
 			err_msg := ""
 			if m.UseSnapshot {
 				// ignore the snapshot
@@ -383,6 +384,7 @@ func (cfg *config) one(cmd int, expectedServers int) int {
 	t0 := time.Now()
 	starts := 0
 	for time.Since(t0).Seconds() < 10 {
+	//for time.Since(t0).Seconds() < 100 { // use too long time to complete agreement
 		// try all the servers, maybe one is the leader.
 		index := -1
 		for si := 0; si < cfg.n; si++ {
@@ -407,6 +409,7 @@ func (cfg *config) one(cmd int, expectedServers int) int {
 			// submitted our command; wait a while for agreement.
 			t1 := time.Now()
 			for time.Since(t1).Seconds() < 2 {
+			//for time.Since(t1).Seconds() < 20 {
 				nd, cmd1 := cfg.nCommitted(index)
 				if nd > 0 && nd >= expectedServers {
 					// committed
@@ -420,6 +423,11 @@ func (cfg *config) one(cmd int, expectedServers int) int {
 		} else {
 			time.Sleep(50 * time.Millisecond)
 		}
+	}
+	
+	//debug
+	for i := 0; i < len(cfg.rafts); i++ {
+		fmt.Printf("show cfg logs, S%v log:%v\n", i, cfg.logs[i])
 	}
 	cfg.t.Fatalf("one(%v) failed to reach agreement", cmd)
 	return -1

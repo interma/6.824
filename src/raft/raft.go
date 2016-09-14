@@ -25,7 +25,8 @@ import "math/rand"
 import "bytes"
 import "encoding/gob"
 
-
+//const debugEnabled = false
+const debugEnabled = true
 
 const (
 	_ = iota
@@ -261,6 +262,12 @@ func (rf *Raft) AppendEntries(args AppendEntriesArgs, reply *AppendEntriesReply)
 		return
 	}
 	
+	//important: reset timer
+	ec_timeout := time.Duration(rand.Int63() % TM_EC + TM_EC) * time.Millisecond
+	hb_timeout := 100000 * time.Millisecond
+	rf.ec_timer.Reset(ec_timeout)
+	rf.hb_timer.Reset(hb_timeout)
+
 	if args.Term > rf.currentTerm {
 		//If RPC request or response contains term T > currentTerm: set currentTerm = T, convert to follower (§5.1)
 		rf.to_follower(args.Term, -1)
@@ -310,7 +317,10 @@ func (rf *Raft) AppendEntries(args AppendEntriesArgs, reply *AppendEntriesReply)
 		rf.commitIndex = min
 	}
 	
-	fmt.Printf("show S%v term:%v commitIndex:%v log:%v\n", rf.me, rf.currentTerm, rf.commitIndex, rf.log)
+	//debug
+	if debugEnabled {
+		fmt.Printf("show S%v term:%v commitIndex:%v log:%v\n", rf.me, rf.currentTerm, rf.commitIndex, rf.log)
+	}
 
 	//and do apply
 	rf.doApply()
@@ -356,6 +366,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	//index = rf.getLastIndex() + 1
 	//rf.log = append(rf.log, LogEntry{LogTerm:term,LogCmd:command,LogIndex:index}) 
 	rf.persist()
+	fmt.Printf("Start S%v cmd[%v]\n", rf.me, command)
 
 	//use ApplyMsg inform client 
 	return index, term, isLeader
@@ -415,7 +426,10 @@ func (rf *Raft) boardcastRV() {
 
 // caller *must lock* in outside 
 func (rf *Raft) boardcastAE() {
-	fmt.Printf("boardcastAE S%v term:%v log:%v\n", rf.me, rf.currentTerm, rf.log)
+	//debug
+	if debugEnabled {
+		fmt.Printf("boardcastAE S%v term:%v log:%v\n", rf.me, rf.currentTerm, rf.log)
+	}
 	
 	/*
 	Term		int //leader’s term
@@ -447,7 +461,11 @@ func (rf *Raft) boardcastAE() {
 			//bug FIX, mutex not lock go{}code
 			//so every global vars in go{}code should be used carefully...
 			go func(i int, args AppendEntriesArgs) {
-				fmt.Printf("ae send log[%v:term%v:len%v,%v] S%v to S%v\n", args.PrevLogIndex+1,args.Term, log_cnt, args.Entries, rf.me, i)
+				//debug
+				if debugEnabled {
+					fmt.Printf("ae send log[%v:term%v:len%v,%v] S%v to S%v\n", args.PrevLogIndex+1,args.Term, log_cnt, args.Entries, rf.me, i)
+				}
+				
 				//fmt.Printf("ae send log[%v:len%v] to S%v\n", args.PrevLogIndex+1, log_cnt, i)
 				
 				var reply AppendEntriesReply
