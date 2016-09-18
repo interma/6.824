@@ -696,7 +696,50 @@ func TestFigure8(t *testing.T) {
 	fmt.Printf("  ... Passed\n")
 }
 
-func OTestUnreliableAgree(t *testing.T) {
+func XTestFigure8_me(t *testing.T) {
+	servers := 5
+	cfg := make_config(t, servers, false)
+	defer cfg.cleanup()
+
+	fmt.Printf("Test: Figure 8 ME ...\n")
+
+	time.Sleep(time.Duration(2000) * time.Millisecond)
+	leader1 := -1
+	for i := 0; i < servers; i++ {
+		if cfg.rafts[i] != nil {
+			_, _, ok := cfg.rafts[i].Start(100)
+			if ok {
+				leader1 = i
+				break
+			}
+		}
+	}
+	cfg.crash1(leader1)
+	time.Sleep(time.Duration(2000) * time.Millisecond)
+	
+	leader2 := -1
+	for i := 0; i < servers; i++ {
+		if cfg.rafts[i] != nil {
+			_, _, ok := cfg.rafts[i].Start(101)
+			if ok {
+				leader2 = i
+				break
+			}
+		}
+	}
+	cfg.crash1(leader2)
+
+	cfg.start1(leader1)
+	cfg.connect(leader1)
+	
+	cfg.one(103, servers)
+
+
+	fmt.Printf("  ... ME Passed\n")
+}
+
+
+func TestUnreliableAgree(t *testing.T) {
 	servers := 5
 	cfg := make_config(t, servers, true)
 	defer cfg.cleanup()
@@ -725,7 +768,7 @@ func OTestUnreliableAgree(t *testing.T) {
 	fmt.Printf("  ... Passed\n")
 }
 
-func OTestFigure8Unreliable(t *testing.T) {
+func TestFigure8Unreliable(t *testing.T) {
 	servers := 5
 	cfg := make_config(t, servers, true)
 	defer cfg.cleanup()
@@ -926,15 +969,15 @@ func internalChurn(t *testing.T, unreliable bool) {
 	fmt.Printf("  ... Passed\n")
 }
 
-func OTestReliableChurn(t *testing.T) {
+func TestReliableChurn(t *testing.T) {
 	internalChurn(t, false)
 }
 
-func OTestUnreliableChurn(t *testing.T) {
+func TestUnreliableChurn(t *testing.T) {
 	internalChurn(t, true)
 }
 
-func OTestFinal(t *testing.T) {
+func XTestFinal(t *testing.T) {
 	fmt.Printf("  ... final Passed\n")
 	time.Sleep(4 * time.Second)
 }

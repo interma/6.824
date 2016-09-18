@@ -577,13 +577,27 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	// initialize from state persisted before a crash
 	rf.readPersist(persister.ReadRaftState())
 	fmt.Printf("reboot S%v, term:%v\n", rf.me, rf.currentTerm)
+	
+	/*
+		if rf.currentTerm > 0 {
+			//in reboot, interact recv big term
+			time.Sleep(500 * time.Millisecond)
+		}
+	*/
 
 	go func() {
+
 		//set init ec timer
 		ec_timeout := time.Duration(rand.Int63() % TM_EC + TM_EC) * time.Millisecond
 		hb_timeout := 100000 * time.Millisecond
 		rf.ec_timer = time.NewTimer(ec_timeout)
 		rf.hb_timer = time.NewTimer(hb_timeout)
+		
+		if rf.currentTerm > 0 {
+			//only in reboot, interact other peers 
+			//for recv big term
+			time.Sleep((TM_EC*2) * time.Millisecond)
+		}
 	
 		//core loop
 		for {
