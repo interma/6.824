@@ -639,7 +639,7 @@ func OTestPersist3(t *testing.T) {
 // The leader in a new term may try to finish replicating log entries that
 // haven't been committed yet.
 //
-func TestFigure8(t *testing.T) {
+func OTestFigure8(t *testing.T) {
 	servers := 5
 	cfg := make_config(t, servers, false)
 	defer cfg.cleanup()
@@ -739,7 +739,7 @@ func XTestFigure8_me(t *testing.T) {
 }
 
 
-func TestUnreliableAgree(t *testing.T) {
+func OTestUnreliableAgree(t *testing.T) {
 	servers := 5
 	cfg := make_config(t, servers, true)
 	defer cfg.cleanup()
@@ -969,11 +969,11 @@ func internalChurn(t *testing.T, unreliable bool) {
 	fmt.Printf("  ... Passed\n")
 }
 
-func TestReliableChurn(t *testing.T) {
+func OTestReliableChurn(t *testing.T) {
 	internalChurn(t, false)
 }
 
-func TestUnreliableChurn(t *testing.T) {
+func OTestUnreliableChurn(t *testing.T) {
 	internalChurn(t, true)
 }
 

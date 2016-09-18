@@ -25,8 +25,8 @@ import "math/rand"
 import "bytes"
 import "encoding/gob"
 
-//const debugEnabled = false
-const debugEnabled = true
+const debugEnabled = false
+//const debugEnabled = true
 
 const (
 	_ = iota
@@ -51,6 +51,7 @@ type ApplyMsg struct {
 }
 
 type LogEntry struct {
+
 	//LogIndex int
 	LogTerm int
 	LogCmd interface{}
@@ -416,6 +417,10 @@ func (rf *Raft) boardcastRV() {
 			go func(i int, args RequestVoteArgs) {
 				var reply RequestVoteReply
 				ok := rf.sendRequestVote(i, args, &reply)
+
+				if rf.role != CANDIDATE || args.Term != rf.currentTerm {
+					return
+				}
 				if (ok) {
 					rf.rv_ch <- reply
 				}
@@ -448,6 +453,9 @@ func (rf *Raft) boardcastAE() {
 			args.LeaderCommit = rf.commitIndex
 			//fmt.Printf("\tdebug in go %v\n", i)
 			args.PrevLogIndex = rf.nextIndex[i]-1
+			if args.PrevLogIndex < 0 || args.PrevLogIndex >= len(rf.log) {
+				fmt.Printf("out of index! debug %v %v\n", args.PrevLogIndex, len(rf.log))
+			}
 			args.PrevLogTerm = rf.log[args.PrevLogIndex].LogTerm
 			//If last log index ≥ nextIndex for a follower: send AppendEntries RPC with log entries starting at nextIndex
 			log_cnt := len(rf.log)-args.PrevLogIndex-1
@@ -470,6 +478,14 @@ func (rf *Raft) boardcastAE() {
 				
 				var reply AppendEntriesReply
 				ok := rf.sendAppendEntries(i, args, &reply)
+
+				rf.mu.Lock()
+				defer rf.mu.Unlock()
+
+				//below if helped deal some trick problem
+				if rf.role != LEADER || args.Term != rf.currentTerm {
+					return
+				}
 
 				if (ok) {
 					//• If successful: update nextIndex and matchIndex for follower (§5.3)
@@ -596,7 +612,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 		if rf.currentTerm > 0 {
 			//only in reboot, interact other peers 
 			//for recv big term
-			time.Sleep((TM_EC*2) * time.Millisecond)
+			time.Sleep((TM_EC*3) * time.Millisecond)
 		}
 	
 		//core loop
@@ -649,7 +665,9 @@ func Make(peers []*labrpc.ClientEnd, me int,
 				rf.mu.Unlock()
 			case reply := <-rf.ae_ch:
 				rf.mu.Lock()
-				fmt.Printf("recv ae reply: %v\n", reply)
+				if debugEnabled {
+					fmt.Printf("recv ae reply: %v\n", reply)
+				}
 				if reply.Term > rf.currentTerm {
 					rf.to_follower(reply.Term, -1)
 				}
