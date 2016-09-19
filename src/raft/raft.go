@@ -34,8 +34,8 @@ const (
 	CANDIDATE
 	LEADER
 
-	TM_HB = 100	// heartbeat timeout
-	TM_EC = 300	// election timeout 150~300
+	TM_HB = 50	// heartbeat timeout
+	TM_EC = 400	// election timeout 100~500
 )
 
 //
@@ -264,7 +264,7 @@ func (rf *Raft) AppendEntries(args AppendEntriesArgs, reply *AppendEntriesReply)
 	}
 	
 	//important: reset timer
-	ec_timeout := time.Duration(rand.Int63() % TM_EC + TM_EC) * time.Millisecond
+	ec_timeout := time.Duration(rand.Int63() % TM_EC + 100) * time.Millisecond
 	hb_timeout := 100000 * time.Millisecond
 	rf.ec_timer.Reset(ec_timeout)
 	rf.hb_timer.Reset(hb_timeout)
@@ -394,7 +394,9 @@ func (rf *Raft) doApply() {
 			rf.lastApplied++
 
 			msg := ApplyMsg{Index:rf.lastApplied,Command:rf.log[rf.lastApplied].LogCmd}
-			fmt.Printf("apply msg S%v [%v]\n", rf.me, msg)
+			if debugEnabled {
+				fmt.Printf("apply msg S%v [%v]\n", rf.me, msg)
+			}
 			rf.apply_ch <- msg
 		} else {
 			break
@@ -418,6 +420,8 @@ func (rf *Raft) boardcastRV() {
 				var reply RequestVoteReply
 				ok := rf.sendRequestVote(i, args, &reply)
 
+				//rf.mu.Lock()
+				//defer rf.mu.Unlock()
 				if rf.role != CANDIDATE || args.Term != rf.currentTerm {
 					return
 				}
@@ -435,6 +439,7 @@ func (rf *Raft) boardcastAE() {
 	if debugEnabled {
 		fmt.Printf("boardcastAE S%v term:%v log:%v\n", rf.me, rf.currentTerm, rf.log)
 	}
+	fmt.Printf("boardcastAE S%v term:%v\n", rf.me, rf.currentTerm)
 	
 	/*
 	Term		int //leader’s term
@@ -453,9 +458,11 @@ func (rf *Raft) boardcastAE() {
 			args.LeaderCommit = rf.commitIndex
 			//fmt.Printf("\tdebug in go %v\n", i)
 			args.PrevLogIndex = rf.nextIndex[i]-1
+			/*
 			if args.PrevLogIndex < 0 || args.PrevLogIndex >= len(rf.log) {
 				fmt.Printf("out of index! debug %v %v\n", args.PrevLogIndex, len(rf.log))
 			}
+			*/
 			args.PrevLogTerm = rf.log[args.PrevLogIndex].LogTerm
 			//If last log index ≥ nextIndex for a follower: send AppendEntries RPC with log entries starting at nextIndex
 			log_cnt := len(rf.log)-args.PrevLogIndex-1
@@ -479,8 +486,6 @@ func (rf *Raft) boardcastAE() {
 				var reply AppendEntriesReply
 				ok := rf.sendAppendEntries(i, args, &reply)
 
-				rf.mu.Lock()
-				defer rf.mu.Unlock()
 
 				//below if helped deal some trick problem
 				if rf.role != LEADER || args.Term != rf.currentTerm {
@@ -490,6 +495,7 @@ func (rf *Raft) boardcastAE() {
 				if (ok) {
 					//• If successful: update nextIndex and matchIndex for follower (§5.3)
 					//• If AppendEntries fails because of log inconsistency:decrement nextIndex and retry (§5.3)
+					rf.mu.Lock()
 					if reply.Success {
 						//rf.nextIndex[i] = len(rf.log)
 						//rf.matchIndex[i] = len(rf.log)-1
@@ -499,6 +505,7 @@ func (rf *Raft) boardcastAE() {
 						//rf.nextIndex[i]-- //slow backtrace
 						rf.nextIndex[i] = reply.NextIndex //quick backtrace
 					}
+					rf.mu.Unlock()
 					
 					//no need reply now
 					rf.ae_ch <- reply
@@ -513,7 +520,7 @@ func (rf *Raft) boardcastAE() {
 func (rf *Raft) to_candidate() {
 	defer rf.persist()
 	rf.role = CANDIDATE
-	ec_timeout := time.Duration(rand.Int63() % TM_EC + TM_EC) * time.Millisecond
+	ec_timeout := time.Duration(rand.Int63() % TM_EC + 100) * time.Millisecond
 	hb_timeout := 100000 * time.Millisecond
 
 	rf.ec_timer.Reset(ec_timeout)
@@ -527,7 +534,7 @@ func (rf *Raft) to_candidate() {
 func (rf *Raft) to_follower(term int, leaderid int) {
 	defer rf.persist()
 	rf.role = FOLLOWER
-	ec_timeout := time.Duration(rand.Int63() % TM_EC + TM_EC) * time.Millisecond
+	ec_timeout := time.Duration(rand.Int63() % TM_EC + 100) * time.Millisecond
 	hb_timeout := 100000 * time.Millisecond
 
 	rf.ec_timer.Reset(ec_timeout)
@@ -569,6 +576,9 @@ func (rf *Raft) to_leader() {
 //
 func Make(peers []*labrpc.ClientEnd, me int,
 	persister *Persister, applyCh chan ApplyMsg) *Raft {
+
+	//rand.Seed(time.Now().UnixNano()) 
+
 	rf := &Raft{}
 	rf.peers = peers
 	rf.persister = persister
@@ -594,17 +604,10 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.readPersist(persister.ReadRaftState())
 	fmt.Printf("reboot S%v, term:%v\n", rf.me, rf.currentTerm)
 	
-	/*
-		if rf.currentTerm > 0 {
-			//in reboot, interact recv big term
-			time.Sleep(500 * time.Millisecond)
-		}
-	*/
-
 	go func() {
 
 		//set init ec timer
-		ec_timeout := time.Duration(rand.Int63() % TM_EC + TM_EC) * time.Millisecond
+		ec_timeout := time.Duration(rand.Int63() % TM_EC + 100) * time.Millisecond
 		hb_timeout := 100000 * time.Millisecond
 		rf.ec_timer = time.NewTimer(ec_timeout)
 		rf.hb_timer = time.NewTimer(hb_timeout)
@@ -614,7 +617,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 			//for recv big term
 			time.Sleep((TM_EC*3) * time.Millisecond)
 		}
-	
+
 		//core loop
 		for {
 			//wait event
@@ -635,7 +638,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 				rf.mu.Unlock()
 			case reply := <-rf.rv_ch:
 				rf.mu.Lock()
-				fmt.Printf("recved RV reply S%v %v\n", rf.me, reply)
+				fmt.Printf("recved RV reply S%v term%v %v\n", rf.me, rf.currentTerm, reply)
 				if reply.Term > rf.currentTerm {
 					rf.to_follower(reply.Term, -1)
 				} else {
